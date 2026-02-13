@@ -1,0 +1,34 @@
+stages:
+  ingest:
+    cmd: python3 src/ingest.py --source-dir data/raw --output-dir data/ingested
+    deps:
+      - src/ingest.py
+      - data/raw
+    outs:
+      - data/ingested
+
+  preprocess:
+    cmd: python3 src/preprocessing.py --input-dir data/ingested --output-dir data/processed --image-size ${preprocessing.image_size} --train-ratio ${preprocessing.train_ratio} --val-ratio ${preprocessing.val_ratio} --seed ${preprocessing.seed}
+    deps:
+      - src/preprocessing.py
+      - data/ingested
+    outs:
+      - data/processed
+
+  train:
+    cmd: python3 src/train.py --data-dir data/processed --output-model models/model.pt --artifact-dir artifacts/training --image-size ${preprocessing.image_size} --epochs ${training.epochs} --batch-size ${training.batch_size} --learning-rate ${training.learning_rate} --model-variant ${training.model_variant}
+    deps:
+      - src/train.py
+      - src/model.py
+      - src/inference.py
+      - data/processed
+    params:
+      - preprocessing.image_size
+      - training.epochs
+      - training.batch_size
+      - training.learning_rate
+      - training.model_variant
+    outs:
+      - models/model.pt
+    metrics:
+      - artifacts/training/metrics.json

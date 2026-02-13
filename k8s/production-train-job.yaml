@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+spec:
+  completions: 1
+  parallelism: 1
+  ttlSecondsAfterFinished: 1200
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: ${K8S_SERVICE_ACCOUNT}
+      containers:
+      - name: trainer
+        image: ${IMAGE}
+        command: ["python", "src/train.py"]
+        args:
+          - "--dataset-gcs-prefix=${DATASET_GCS_PREFIX}"
+          - "--local-cache-dir=/tmp/dataset"
+          - "--output-model=/tmp/model.pt"
+          - "--artifact-dir=/tmp/artifacts"
+          - "--bucket=${BUCKET_NAME}"
+          - "--model-gcs-prefix=${MODEL_GCS_PREFIX}"
+          - "--epochs=${EPOCHS}"
+          - "--batch-size=${BATCH_SIZE}"
+          - "--learning-rate=${LEARNING_RATE}"
+          - "--model-variant=${MODEL_VARIANT}"
+      restartPolicy: Never

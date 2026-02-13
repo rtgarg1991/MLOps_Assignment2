@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 1
+  template:
+    spec:
+      serviceAccountName: ${K8S_SERVICE_ACCOUNT}
+      containers:
+      - name: worker
+        image: ${IMAGE}
+        command: ${CMD}
+        args: ${ARGS}
+      restartPolicy: Never

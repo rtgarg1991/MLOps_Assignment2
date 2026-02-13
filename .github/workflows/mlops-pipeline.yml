@@ -1,0 +1,291 @@
+name: MLOps Assignment 2 Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  REPOSITORY: ${{ secrets.ARTIFACT_REGISTRY_REPO }}
+  TRAIN_IMAGE: cats-dogs-trainer
+  SERVING_IMAGE: cats-dogs-api
+  BUCKET_NAME: ${{ secrets.GCP_BUCKET_NAME }}
+  CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME }}
+  CLUSTER_LOCATION: ${{ secrets.GKE_CLUSTER_LOCATION }}
+  K8S_NAMESPACE: default
+  K8S_SERVICE_ACCOUNT: mlops-trainer
+  APP_NAME: cats-dogs-api
+  DATASET_GCS_PREFIX: datasets/cats-dogs/processed
+  EPOCHS: "5"
+  BATCH_SIZE: "32"
+  LEARNING_RATE: "0.001"
+  MODEL_VARIANT: baseline
+  EVAL_BATCH_GCS_URI: ${{ secrets.EVAL_BATCH_GCS_URI }}
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint
+        run: |
+          export PYTHONPATH=$PYTHONPATH:.
+          flake8 src tests
+
+      - name: Test
+        run: |
+          export PYTHONPATH=$PYTHONPATH:.
+          pytest -q
+
+  build-trainer-image:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image vars
+        run: |
+          echo "[DEBUG] Event: ${{ github.event_name }}, SHA: ${GITHUB_SHA}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "TRAIN_IMAGE_URI=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${TRAIN_IMAGE}:${GITHUB_SHA}" >> $GITHUB_ENV
+          else
+            echo "TRAIN_IMAGE_URI=${TRAIN_IMAGE}:ci-${GITHUB_SHA}" >> $GITHUB_ENV
+          fi
+          echo "[DEBUG] TRAIN_IMAGE_URI set"
+
+      - name: Authenticate to GCP (push only)
+        if: github.event_name == 'push'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Set up gcloud (push only)
+        if: github.event_name == 'push'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker registry auth (push only)
+        if: github.event_name == 'push'
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Build trainer image
+        run: |
+          echo "[DEBUG] Building trainer image: ${TRAIN_IMAGE_URI}"
+          docker build -f Dockerfile -t ${TRAIN_IMAGE_URI} .
+          echo "[DEBUG] Trainer image built successfully"
+
+      - name: Push trainer image (push only)
+        if: github.event_name == 'push'
+        run: docker push ${TRAIN_IMAGE_URI}
+
+  run-training-on-gke:
+    needs: build-trainer-image
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Install envsubst
+        run: sudo apt-get update && sudo apt-get install -y gettext-base
+
+      - name: Submit training job
+        run: |
+          SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-8)
+          export JOB_NAME=train-${SHORT_SHA}
+          export IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${TRAIN_IMAGE}:${GITHUB_SHA}
+          export MODEL_GCS_PREFIX=models/${GITHUB_SHA}
+
+          echo "[DEBUG] Training job: ${JOB_NAME}"
+          echo "[DEBUG] Trainer image: ${IMAGE}"
+          echo "[DEBUG] Model output: gs://${BUCKET_NAME}/${MODEL_GCS_PREFIX}"
+
+          kubectl delete job ${JOB_NAME} --ignore-not-found=true -n ${K8S_NAMESPACE}
+          envsubst < k8s/production-train-job.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
+          echo "[DEBUG] Waiting for training job to complete (timeout 30m)..."
+          kubectl wait --for=condition=complete job/${JOB_NAME} --timeout=30m -n ${K8S_NAMESPACE}
+          echo "[DEBUG] Training job completed. Logs:"
+          kubectl logs job/${JOB_NAME} -n ${K8S_NAMESPACE}
+
+  build-and-push-api-image:
+    needs: [lint-and-test, run-training-on-gke]
+    if: |
+      always() &&
+      needs.lint-and-test.result == 'success' &&
+      (
+        github.event_name == 'pull_request' ||
+        needs.run-training-on-gke.result == 'success'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image vars
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "SERVING_IMAGE_URI=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVING_IMAGE}:${GITHUB_SHA}" >> $GITHUB_ENV
+          else
+            echo "SERVING_IMAGE_URI=${SERVING_IMAGE}:ci-${GITHUB_SHA}" >> $GITHUB_ENV
+          fi
+
+      - name: Prepare model dir
+        run: mkdir -p models
+
+      - name: Build API image for PR (dummy model)
+        if: github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          Path('models/model.pt').write_bytes(b'dummy-model')
+          PY
+          docker build -f Dockerfile.serve -t ${SERVING_IMAGE_URI} .
+
+      - name: Authenticate to GCP (push only)
+        if: github.event_name == 'push'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Set up gcloud (push only)
+        if: github.event_name == 'push'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker registry auth (push only)
+        if: github.event_name == 'push'
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Download trained model from GCS (push only)
+        if: github.event_name == 'push'
+        run: |
+          TARGET_PATH=gs://${BUCKET_NAME}/models/${GITHUB_SHA}/model.pt
+          echo "[DEBUG] Looking for model at: ${TARGET_PATH}"
+          if gsutil ls ${TARGET_PATH} 2>/dev/null; then
+            echo "[DEBUG] Found model for this commit"
+            gsutil cp ${TARGET_PATH} models/model.pt
+          else
+            echo "[DEBUG] Model not found for this SHA, falling back to latest"
+            LATEST=$(gsutil ls gs://${BUCKET_NAME}/models/*/model.pt 2>/dev/null | sort | tail -n 1)
+            if [ -z "${LATEST}" ]; then
+              echo "[ERROR] No trained model found in GCS bucket at all"
+              exit 1
+            fi
+            echo "[DEBUG] Using latest model: ${LATEST}"
+            gsutil cp ${LATEST} models/model.pt
+          fi
+          echo "[DEBUG] Model downloaded: $(ls -lh models/model.pt)"
+
+      - name: Build API image
+        if: github.event_name == 'push'
+        run: docker build -f Dockerfile.serve -t ${SERVING_IMAGE_URI} .
+
+      - name: Push API image (push only)
+        if: github.event_name == 'push'
+        run: docker push ${SERVING_IMAGE_URI}
+
+  deploy-to-gke:
+    needs: build-and-push-api-image
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Install envsubst
+        run: sudo apt-get update && sudo apt-get install -y gettext-base
+
+      - name: Deploy API
+        run: |
+          export SERVING_IMAGE_URI=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVING_IMAGE}:${GITHUB_SHA}
+          echo "[DEBUG] Deploying API image: ${SERVING_IMAGE_URI}"
+          envsubst < k8s/deployment.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
+          echo "[DEBUG] Waiting for rollout to complete (timeout 10m)..."
+          kubectl rollout status deployment/${APP_NAME} --timeout=10m -n ${K8S_NAMESPACE}
+          echo "[DEBUG] Applying PodMonitoring manifest"
+          kubectl apply -n ${K8S_NAMESPACE} -f k8s/monitoring/google-pod-monitor.yaml
+          echo "[DEBUG] Deployment complete"
+
+      - name: Wait for external endpoint
+        run: |
+          echo "[DEBUG] Waiting for LoadBalancer IP/hostname (max 5 min)..."
+          for i in {1..30}; do
+            IP=$(kubectl get svc ${APP_NAME} -n ${K8S_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            HOSTNAME=$(kubectl get svc ${APP_NAME} -n ${K8S_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            if [ -n "$IP" ]; then
+              echo "[DEBUG] Got LoadBalancer IP: $IP"
+              echo "BASE_URL=http://$IP" >> $GITHUB_ENV
+              exit 0
+            fi
+            if [ -n "$HOSTNAME" ]; then
+              echo "[DEBUG] Got LoadBalancer hostname: $HOSTNAME"
+              echo "BASE_URL=http://$HOSTNAME" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "[DEBUG] Attempt $i/30 - endpoint not ready yet, waiting 10s..."
+            sleep 10
+          done
+          echo "[ERROR] LoadBalancer endpoint not ready after 5 minutes"
+          kubectl describe svc ${APP_NAME} -n ${K8S_NAMESPACE}
+          exit 1
+
+      - name: Run smoke test gate
+        run: |
+          echo "[DEBUG] Running smoke test against: ${BASE_URL}"
+          python -m pip install requests pillow
+          python src/smoke_test.py --base-url ${BASE_URL}
+          echo "[DEBUG] Smoke test passed"
+
+      - name: Optional post-deploy performance check
+        if: env.EVAL_BATCH_GCS_URI != ''
+        run: |
+          gsutil cp ${EVAL_BATCH_GCS_URI} /tmp/eval_batch.csv
+          python src/post_deploy_eval.py \
+            --base-url ${BASE_URL} \
+            --input-csv /tmp/eval_batch.csv \
+            --output-json artifacts/post_deploy_eval.json

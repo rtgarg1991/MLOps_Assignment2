@@ -1,1 +1,47 @@
-target/*
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# ML artifacts and runtime outputs
+artifacts/
+mlruns/
+models/
+
+# Data folders (version with DVC/Git-LFS if needed)
+data/raw/
+data/processed/
+
+# Logs
+*.log
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Environment
+.env
+.env.*
+
+# DVC local cache
+.dvc/cache/
+.dvc/tmp/
+
+# Local validation outputs
+local_test/
+local_test2/
+local_actual_validation/
+mlruns/
+
+# Packaging outputs
+submission/
