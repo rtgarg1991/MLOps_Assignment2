@@ -22,7 +22,7 @@ env:
   K8S_NAMESPACE: default
   K8S_SERVICE_ACCOUNT: mlops-trainer
   APP_NAME: cats-dogs-api
-  DATASET_GCS_PREFIX: datasets/cats-dogs/processed
+  DATASET_GCS_PREFIX: datasets/cats-dogs/raw
   EPOCHS: "5"
   BATCH_SIZE: "32"
   LEARNING_RATE: "0.001"
@@ -127,10 +127,12 @@ jobs:
           export JOB_NAME=train-${SHORT_SHA}
           export IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${TRAIN_IMAGE}:${GITHUB_SHA}
           export MODEL_GCS_PREFIX=models/${GITHUB_SHA}
+          export DATA_VERSION_PREFIX=datasets/cats-dogs/${GITHUB_SHA}
 
           echo "[DEBUG] Training job: ${JOB_NAME}"
           echo "[DEBUG] Trainer image: ${IMAGE}"
           echo "[DEBUG] Model output: gs://${BUCKET_NAME}/${MODEL_GCS_PREFIX}"
+          echo "[DEBUG] Data version prefix: gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}"
 
           kubectl delete job ${JOB_NAME} --ignore-not-found=true -n ${K8S_NAMESPACE}
           envsubst < k8s/production-train-job.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -

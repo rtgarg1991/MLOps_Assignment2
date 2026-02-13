@@ -13,17 +13,69 @@ spec:
       containers:
       - name: trainer
         image: ${IMAGE}
-        command: ["python", "src/train.py"]
+        command: ["/bin/sh", "-c"]
         args:
-          - "--dataset-gcs-prefix=${DATASET_GCS_PREFIX}"
-          - "--local-cache-dir=/tmp/dataset"
-          - "--output-model=/tmp/model.pt"
-          - "--artifact-dir=/tmp/artifacts"
-          - "--bucket=${BUCKET_NAME}"
-          - "--model-gcs-prefix=${MODEL_GCS_PREFIX}"
-          - "--epochs=${EPOCHS}"
-          - "--batch-size=${BATCH_SIZE}"
-          - "--learning-rate=${LEARNING_RATE}"
-          - "--model-variant=${MODEL_VARIANT}"
-          - "--mlflow-tracking-uri=http://mlflow-service.default.svc.cluster.local:5000"
+          - |
+            set -e
+
+            echo "[TRAIN-JOB] Step 1/4: Downloading raw data from GCS..."
+            python -c "
+            from src.train import download_prefix_from_gcs
+            from pathlib import Path
+            download_prefix_from_gcs('${BUCKET_NAME}', '${DATASET_GCS_PREFIX}', Path('/tmp/raw'))
+            "
+            echo "[TRAIN-JOB] Raw data downloaded:"
+            ls -la /tmp/raw/
+
+            echo "[TRAIN-JOB] Step 2/4: Running ingest (normalize folder names)..."
+            python src/ingest.py --source-dir /tmp/raw --output-dir /tmp/ingested
+            echo "[TRAIN-JOB] Uploading ingested data to GCS (versioned)..."
+            python -c "
+            from src.train import upload_file_to_gcs
+            from pathlib import Path
+            import os
+            for root, dirs, files in os.walk('/tmp/ingested'):
+                for fname in files:
+                    local = Path(root) / fname
+                    rel = local.relative_to('/tmp/ingested')
+                    gcs_key = '${DATA_VERSION_PREFIX}/ingested/' + str(rel)
+                    upload_file_to_gcs('${BUCKET_NAME}', local, gcs_key)
+            "
+            echo "[TRAIN-JOB] Ingested data versioned at gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/ingested/"
+
+            echo "[TRAIN-JOB] Step 3/4: Running preprocessing (resize + split)..."
+            python src/preprocessing.py --input-dir /tmp/ingested --output-dir /tmp/processed
+            echo "[TRAIN-JOB] Uploading processed data to GCS (versioned)..."
+            python -c "
+            from src.train import upload_file_to_gcs
+            from pathlib import Path
+            import os
+            for root, dirs, files in os.walk('/tmp/processed'):
+                for fname in files:
+                    local = Path(root) / fname
+                    rel = local.relative_to('/tmp/processed')
+                    gcs_key = '${DATA_VERSION_PREFIX}/processed/' + str(rel)
+                    upload_file_to_gcs('${BUCKET_NAME}', local, gcs_key)
+            "
+            echo "[TRAIN-JOB] Processed data versioned at gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/processed/"
+
+            echo "[TRAIN-JOB] Step 4/4: Training model..."
+            python src/train.py \
+              --data-dir=/tmp/processed \
+              --output-model=/tmp/model.pt \
+              --artifact-dir=/tmp/artifacts \
+              --bucket=${BUCKET_NAME} \
+              --model-gcs-prefix=${MODEL_GCS_PREFIX} \
+              --epochs=${EPOCHS} \
+              --batch-size=${BATCH_SIZE} \
+              --learning-rate=${LEARNING_RATE} \
+              --model-variant=${MODEL_VARIANT} \
+              --mlflow-tracking-uri=http://mlflow-service.default.svc.cluster.local:5000
+
+            echo "[TRAIN-JOB] Pipeline complete"
+            echo "[TRAIN-JOB] Data lineage for this run:"
+            echo "  Raw:       gs://${BUCKET_NAME}/${DATASET_GCS_PREFIX}/"
+            echo "  Ingested:  gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/ingested/"
+            echo "  Processed: gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/processed/"
+            echo "  Model:     gs://${BUCKET_NAME}/${MODEL_GCS_PREFIX}/model.pt"
       restartPolicy: Never
