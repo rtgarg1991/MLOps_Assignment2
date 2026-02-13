@@ -25,4 +25,5 @@ spec:
           - "--batch-size=${BATCH_SIZE}"
           - "--learning-rate=${LEARNING_RATE}"
           - "--model-variant=${MODEL_VARIANT}"
+          - "--mlflow-tracking-uri=http://mlflow-service.default.svc.cluster.local:5000"
       restartPolicy: Never

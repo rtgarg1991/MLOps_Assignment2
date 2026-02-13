@@ -57,6 +57,7 @@ jobs:
 
   build-trainer-image:
     needs: lint-and-test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,26 +65,19 @@ jobs:
       - name: Set image vars
         run: |
           echo "[DEBUG] Event: ${{ github.event_name }}, SHA: ${GITHUB_SHA}"
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "TRAIN_IMAGE_URI=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${TRAIN_IMAGE}:${GITHUB_SHA}" >> $GITHUB_ENV
-          else
-            echo "TRAIN_IMAGE_URI=${TRAIN_IMAGE}:ci-${GITHUB_SHA}" >> $GITHUB_ENV
-          fi
+          echo "TRAIN_IMAGE_URI=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${TRAIN_IMAGE}:${GITHUB_SHA}" >> $GITHUB_ENV
           echo "[DEBUG] TRAIN_IMAGE_URI set"
 
-      - name: Authenticate to GCP (push only)
-        if: github.event_name == 'push'
+      - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SA_EMAIL }}
 
-      - name: Set up gcloud (push only)
-        if: github.event_name == 'push'
+      - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker registry auth (push only)
-        if: github.event_name == 'push'
+      - name: Configure Docker registry auth
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
       - name: Build trainer image
@@ -92,8 +86,7 @@ jobs:
           docker build -f Dockerfile -t ${TRAIN_IMAGE_URI} .
           echo "[DEBUG] Trainer image built successfully"
 
-      - name: Push trainer image (push only)
-        if: github.event_name == 'push'
+      - name: Push trainer image
         run: docker push ${TRAIN_IMAGE_URI}
 
   run-training-on-gke:
@@ -121,6 +114,13 @@ jobs:
       - name: Install envsubst
         run: sudo apt-get update && sudo apt-get install -y gettext-base
 
+      - name: Deploy MLflow server
+        run: |
+          echo "[DEBUG] Deploying MLflow server"
+          kubectl apply -n ${K8S_NAMESPACE} -f k8s/mlflow.yaml
+          kubectl wait --for=condition=ready pod -l app=mlflow -n ${K8S_NAMESPACE} --timeout=120s
+          echo "[DEBUG] MLflow server ready"
+
       - name: Submit training job
         run: |
           SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-8)
@@ -141,54 +141,31 @@ jobs:
 
   build-and-push-api-image:
     needs: [lint-and-test, run-training-on-gke]
-    if: |
-      always() &&
-      needs.lint-and-test.result == 'success' &&
-      (
-        github.event_name == 'pull_request' ||
-        needs.run-training-on-gke.result == 'success'
-      )
+    if: github.event_name == 'push' && needs.run-training-on-gke.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Set image vars
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "SERVING_IMAGE_URI=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVING_IMAGE}:${GITHUB_SHA}" >> $GITHUB_ENV
-          else
-            echo "SERVING_IMAGE_URI=${SERVING_IMAGE}:ci-${GITHUB_SHA}" >> $GITHUB_ENV
-          fi
+          echo "SERVING_IMAGE_URI=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVING_IMAGE}:${GITHUB_SHA}" >> $GITHUB_ENV
 
       - name: Prepare model dir
         run: mkdir -p models
 
-      - name: Build API image for PR (dummy model)
-        if: github.event_name == 'pull_request'
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          Path('models/model.pt').write_bytes(b'dummy-model')
-          PY
-          docker build -f Dockerfile.serve -t ${SERVING_IMAGE_URI} .
-
-      - name: Authenticate to GCP (push only)
-        if: github.event_name == 'push'
+      - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SA_EMAIL }}
 
-      - name: Set up gcloud (push only)
-        if: github.event_name == 'push'
+      - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker registry auth (push only)
-        if: github.event_name == 'push'
+      - name: Configure Docker registry auth
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
-      - name: Download trained model from GCS (push only)
-        if: github.event_name == 'push'
+      - name: Download trained model from GCS
         run: |
           TARGET_PATH=gs://${BUCKET_NAME}/models/${GITHUB_SHA}/model.pt
           echo "[DEBUG] Looking for model at: ${TARGET_PATH}"
@@ -208,11 +185,9 @@ jobs:
           echo "[DEBUG] Model downloaded: $(ls -lh models/model.pt)"
 
       - name: Build API image
-        if: github.event_name == 'push'
         run: docker build -f Dockerfile.serve -t ${SERVING_IMAGE_URI} .
 
-      - name: Push API image (push only)
-        if: github.event_name == 'push'
+      - name: Push API image
         run: docker push ${SERVING_IMAGE_URI}
 
   deploy-to-gke:
