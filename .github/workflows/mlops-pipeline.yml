@@ -23,7 +23,7 @@ env:
   K8S_SERVICE_ACCOUNT: mlops-trainer
   APP_NAME: cats-dogs-api
   DATASET_GCS_PREFIX: datasets/cats-dogs/raw
-  EPOCHS: "3"
+  EPOCHS: "1"
   BATCH_SIZE: "64"
   LEARNING_RATE: "0.001"
   MODEL_VARIANT: baseline
@@ -136,8 +136,37 @@ jobs:
 
           kubectl delete job ${JOB_NAME} --ignore-not-found=true -n ${K8S_NAMESPACE}
           envsubst < k8s/production-train-job.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
-          echo "[DEBUG] Waiting for training job to complete (timeout 120m)..."
-          kubectl wait --for=condition=complete job/${JOB_NAME} --timeout=120m -n ${K8S_NAMESPACE}
+          echo "[DEBUG] Polling for training job completion (max 120m)..."
+          SECONDS=0
+          REFRESH_INTERVAL=600
+          LAST_REFRESH=$SECONDS
+          while true; do
+            STATUS=$(kubectl get job ${JOB_NAME} -n ${K8S_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "")
+            FAILED=$(kubectl get job ${JOB_NAME} -n ${K8S_NAMESPACE} -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || echo "")
+            if [ "$STATUS" = "True" ]; then
+              echo "[DEBUG] Training job completed successfully"
+              break
+            fi
+            if [ "$FAILED" = "True" ]; then
+              echo "[ERROR] Training job failed"
+              kubectl logs job/${JOB_NAME} -n ${K8S_NAMESPACE} --tail=50
+              exit 1
+            fi
+            if [ $SECONDS -ge 7200 ]; then
+              echo "[ERROR] Training job timed out after 120m"
+              kubectl logs job/${JOB_NAME} -n ${K8S_NAMESPACE} --tail=50
+              exit 1
+            fi
+            # Refresh GKE credentials every 10 minutes to prevent token expiry
+            if [ $(( SECONDS - LAST_REFRESH )) -ge $REFRESH_INTERVAL ]; then
+              echo "[DEBUG] Refreshing GKE credentials..."
+              gcloud container clusters get-credentials ${GKE_CLUSTER} --zone ${GKE_ZONE} --project ${PROJECT_ID}
+              LAST_REFRESH=$SECONDS
+            fi
+            ELAPSED_MIN=$(( SECONDS / 60 ))
+            echo "[DEBUG] Job still running... (${ELAPSED_MIN}m elapsed)"
+            sleep 60
+          done
           echo "[DEBUG] Training job completed. Logs:"
           kubectl logs job/${JOB_NAME} -n ${K8S_NAMESPACE}
 
