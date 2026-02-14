@@ -236,7 +236,10 @@ def run_one_epoch(
     preds_all: List[int] = []
     targets_all: List[int] = []
 
-    for inputs, targets in loader:
+    total_batches = len(loader)
+    one_third = max(1, total_batches // 3)
+
+    for i, (inputs, targets) in enumerate(loader):
         inputs = inputs.to(device)
         targets = targets.to(device)
 
@@ -255,6 +258,15 @@ def run_one_epoch(
         losses.append(float(loss.item()))
         preds_all.extend(preds.detach().cpu().numpy().tolist())
         targets_all.extend(targets.detach().cpu().numpy().tolist())
+
+        if (i + 1) % one_third == 0 or (i + 1) == total_batches:
+            status = "Training" if is_training else "Evaluating"
+            percent = ((i + 1) / total_batches) * 100
+            current_loss = float(np.mean(losses))
+            print(
+                f"[{status}] Batch {i + 1}/{total_batches} ({percent:.0f}%) | "
+                f"Avg Loss: {current_loss:.4f}"
+            )
 
     avg_loss = float(np.mean(losses)) if losses else 0.0
     acc = compute_accuracy(preds_all, targets_all)

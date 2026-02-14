@@ -23,8 +23,8 @@ env:
   K8S_SERVICE_ACCOUNT: mlops-trainer
   APP_NAME: cats-dogs-api
   DATASET_GCS_PREFIX: datasets/cats-dogs/raw
-  EPOCHS: "5"
-  BATCH_SIZE: "32"
+  EPOCHS: "3"
+  BATCH_SIZE: "64"
   LEARNING_RATE: "0.001"
   MODEL_VARIANT: baseline
   EVAL_BATCH_GCS_URI: ${{ secrets.EVAL_BATCH_GCS_URI }}
@@ -136,8 +136,8 @@ jobs:
 
           kubectl delete job ${JOB_NAME} --ignore-not-found=true -n ${K8S_NAMESPACE}
           envsubst < k8s/production-train-job.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
-          echo "[DEBUG] Waiting for training job to complete (timeout 30m)..."
-          kubectl wait --for=condition=complete job/${JOB_NAME} --timeout=30m -n ${K8S_NAMESPACE}
+          echo "[DEBUG] Waiting for training job to complete (timeout 60m)..."
+          kubectl wait --for=condition=complete job/${JOB_NAME} --timeout=60m -n ${K8S_NAMESPACE}
           echo "[DEBUG] Training job completed. Logs:"
           kubectl logs job/${JOB_NAME} -n ${K8S_NAMESPACE}
 

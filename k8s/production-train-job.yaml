@@ -17,6 +17,7 @@ spec:
         args:
           - |
             set -e
+            export GIT_PYTHON_REFRESH=quiet
 
             echo "[TRAIN-JOB] Step 1/4: Downloading raw data from GCS..."
             python -c "
