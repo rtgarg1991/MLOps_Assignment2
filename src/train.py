@@ -49,7 +49,9 @@ def compute_accuracy(preds: Iterable[int], targets: Iterable[int]) -> float:
     return correct / len(targets_list)
 
 
-def upload_file_to_gcs(bucket_name: str, source_path: Path, dest_path: str) -> None:
+def upload_file_to_gcs(
+    bucket_name: str, source_path: Path, dest_path: str
+) -> None:
     if storage is None:
         raise RuntimeError("google-cloud-storage is not installed")
     client = storage.Client()
@@ -59,27 +61,90 @@ def upload_file_to_gcs(bucket_name: str, source_path: Path, dest_path: str) -> N
 
 
 def download_prefix_from_gcs(
-    bucket_name: str, prefix: str, destination_dir: Path
+    bucket_name: str,
+    prefix: str,
+    destination_dir: Path,
+    max_workers: int = 16,
 ) -> None:
     if storage is None:
         raise RuntimeError("google-cloud-storage is not installed")
 
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     client = storage.Client()
-    bucket = client.bucket(bucket_name)
     blobs = list(client.list_blobs(bucket_name, prefix=prefix))
+    blobs = [b for b in blobs if not b.name.endswith("/")]
 
     if not blobs:
         raise FileNotFoundError(
             f"No objects found in gs://{bucket_name}/{prefix}"
         )
 
-    for blob in blobs:
-        if blob.name.endswith("/"):
-            continue
-        relative = Path(blob.name).relative_to(prefix)
+    print(
+        f"[gcs] Downloading {len(blobs)} files with {max_workers} threads..."
+    )
+    bucket = client.bucket(bucket_name)
+
+    def _download_one(blob_name: str) -> str:
+        relative = Path(blob_name).relative_to(prefix)
         local_path = destination_dir / relative
         local_path.parent.mkdir(parents=True, exist_ok=True)
-        bucket.blob(blob.name).download_to_filename(str(local_path))
+        bucket.blob(blob_name).download_to_filename(str(local_path))
+        return blob_name
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_download_one, b.name): b.name for b in blobs}
+        for future in as_completed(futures):
+            future.result()
+            done += 1
+            if done % 500 == 0 or done == len(blobs):
+                print(f"[gcs]   downloaded {done}/{len(blobs)}")
+
+    print(f"[gcs] Download complete: {done} files")
+
+
+def upload_directory_to_gcs(
+    bucket_name: str,
+    local_dir: Path,
+    gcs_prefix: str,
+    max_workers: int = 16,
+) -> None:
+    if storage is None:
+        raise RuntimeError("google-cloud-storage is not installed")
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import os
+
+    files = []
+    for root, _dirs, fnames in os.walk(local_dir):
+        for fname in fnames:
+            files.append(Path(root) / fname)
+
+    if not files:
+        print(f"[gcs] No files to upload from {local_dir}")
+        return
+
+    print(f"[gcs] Uploading {len(files)} files with {max_workers} threads...")
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+
+    def _upload_one(local_path: Path) -> str:
+        rel = local_path.relative_to(local_dir)
+        gcs_key = f"{gcs_prefix.rstrip('/')}/{rel}"
+        bucket.blob(gcs_key).upload_from_filename(str(local_path))
+        return gcs_key
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_upload_one, f): f for f in files}
+        for future in as_completed(futures):
+            future.result()
+            done += 1
+            if done % 500 == 0 or done == len(files):
+                print(f"[gcs]   uploaded {done}/{len(files)}")
+
+    print(f"[gcs] Upload complete: {done} files")
 
 
 def make_transforms(image_size: int):
@@ -114,9 +179,15 @@ def build_dataloaders(
     torch, _, _, DataLoader, datasets, _ = _load_torch_stack()
     train_transform, eval_transform = make_transforms(image_size)
 
-    train_ds = datasets.ImageFolder(str(data_dir / "train"), transform=train_transform)
-    val_ds = datasets.ImageFolder(str(data_dir / "val"), transform=eval_transform)
-    test_ds = datasets.ImageFolder(str(data_dir / "test"), transform=eval_transform)
+    train_ds = datasets.ImageFolder(
+        str(data_dir / "train"), transform=train_transform
+    )
+    val_ds = datasets.ImageFolder(
+        str(data_dir / "val"), transform=eval_transform
+    )
+    test_ds = datasets.ImageFolder(
+        str(data_dir / "test"), transform=eval_transform
+    )
 
     if set(train_ds.classes) != {"cat", "dog"}:
         raise ValueError(
@@ -233,12 +304,16 @@ def save_artifacts(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", type=Path, default=Path("data/processed"))
+    parser.add_argument(
+        "--data-dir", type=Path, default=Path("data/processed")
+    )
     parser.add_argument("--dataset-gcs-prefix", type=str, default="")
     parser.add_argument(
         "--local-cache-dir", type=Path, default=Path("/tmp/cats-dogs-data")
     )
-    parser.add_argument("--output-model", type=Path, default=Path("models/model.pt"))
+    parser.add_argument(
+        "--output-model", type=Path, default=Path("models/model.pt")
+    )
     parser.add_argument(
         "--artifact-dir", type=Path, default=Path("artifacts/training")
     )
@@ -255,7 +330,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--bucket", type=str, default="")
-    parser.add_argument("--model-gcs-prefix", type=str, default="models/latest")
+    parser.add_argument(
+        "--model-gcs-prefix", type=str, default="models/latest"
+    )
     parser.add_argument(
         "--mlflow-tracking-uri",
         type=str,

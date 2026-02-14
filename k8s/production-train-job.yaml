@@ -31,15 +31,9 @@ spec:
             python src/ingest.py --source-dir /tmp/raw --output-dir /tmp/ingested
             echo "[TRAIN-JOB] Uploading ingested data to GCS (versioned)..."
             python -c "
-            from src.train import upload_file_to_gcs
+            from src.train import upload_directory_to_gcs
             from pathlib import Path
-            import os
-            for root, dirs, files in os.walk('/tmp/ingested'):
-                for fname in files:
-                    local = Path(root) / fname
-                    rel = local.relative_to('/tmp/ingested')
-                    gcs_key = '${DATA_VERSION_PREFIX}/ingested/' + str(rel)
-                    upload_file_to_gcs('${BUCKET_NAME}', local, gcs_key)
+            upload_directory_to_gcs('${BUCKET_NAME}', Path('/tmp/ingested'), '${DATA_VERSION_PREFIX}/ingested')
             "
             echo "[TRAIN-JOB] Ingested data versioned at gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/ingested/"
 
@@ -47,15 +41,9 @@ spec:
             python src/preprocessing.py --input-dir /tmp/ingested --output-dir /tmp/processed
             echo "[TRAIN-JOB] Uploading processed data to GCS (versioned)..."
             python -c "
-            from src.train import upload_file_to_gcs
+            from src.train import upload_directory_to_gcs
             from pathlib import Path
-            import os
-            for root, dirs, files in os.walk('/tmp/processed'):
-                for fname in files:
-                    local = Path(root) / fname
-                    rel = local.relative_to('/tmp/processed')
-                    gcs_key = '${DATA_VERSION_PREFIX}/processed/' + str(rel)
-                    upload_file_to_gcs('${BUCKET_NAME}', local, gcs_key)
+            upload_directory_to_gcs('${BUCKET_NAME}', Path('/tmp/processed'), '${DATA_VERSION_PREFIX}/processed')
             "
             echo "[TRAIN-JOB] Processed data versioned at gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/processed/"
 
@@ -70,6 +58,7 @@ spec:
               --batch-size=${BATCH_SIZE} \
               --learning-rate=${LEARNING_RATE} \
               --model-variant=${MODEL_VARIANT} \
+              --num-workers=2 \
               --mlflow-tracking-uri=http://mlflow-service.default.svc.cluster.local:5000
 
             echo "[TRAIN-JOB] Pipeline complete"
@@ -78,4 +67,19 @@ spec:
             echo "  Ingested:  gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/ingested/"
             echo "  Processed: gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/processed/"
             echo "  Model:     gs://${BUCKET_NAME}/${MODEL_GCS_PREFIX}/model.pt"
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        resources:
+          requests:
+            cpu: "2500m"
+            memory: "10Gi"
+          limits:
+            cpu: "3500m"
+            memory: "12Gi"
       restartPolicy: Never
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
