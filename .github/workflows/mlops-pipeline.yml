@@ -136,8 +136,8 @@ jobs:
 
           kubectl delete job ${JOB_NAME} --ignore-not-found=true -n ${K8S_NAMESPACE}
           envsubst < k8s/production-train-job.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
-          echo "[DEBUG] Waiting for training job to complete (timeout 60m)..."
-          kubectl wait --for=condition=complete job/${JOB_NAME} --timeout=60m -n ${K8S_NAMESPACE}
+          echo "[DEBUG] Waiting for training job to complete (timeout 120m)..."
+          kubectl wait --for=condition=complete job/${JOB_NAME} --timeout=120m -n ${K8S_NAMESPACE}
           echo "[DEBUG] Training job completed. Logs:"
           kubectl logs job/${JOB_NAME} -n ${K8S_NAMESPACE}
 
