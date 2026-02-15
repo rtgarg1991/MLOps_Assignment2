@@ -57,7 +57,6 @@ jobs:
 
   build-trainer-image:
     needs: lint-and-test
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +86,7 @@ jobs:
           echo "[DEBUG] Trainer image built successfully"
 
       - name: Push trainer image
+        if: github.event_name == 'push'
         run: docker push ${TRAIN_IMAGE_URI}
 
   run-training-on-gke:
@@ -117,8 +117,8 @@ jobs:
       - name: Deploy MLflow server
         run: |
           echo "[DEBUG] Deploying MLflow server"
-          kubectl apply -n ${K8S_NAMESPACE} -f k8s/mlflow.yaml
-          kubectl wait --for=condition=ready pod -l app=mlflow -n ${K8S_NAMESPACE} --timeout=120s
+          envsubst < k8s/mlflow.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
+          kubectl wait --for=condition=ready pod -l app=mlflow -n ${K8S_NAMESPACE} --timeout=300s
           echo "[DEBUG] MLflow server ready"
 
       - name: Submit training job
@@ -127,6 +127,7 @@ jobs:
           export JOB_NAME=train-${SHORT_SHA}
           export IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${TRAIN_IMAGE}:${GITHUB_SHA}
           export MODEL_GCS_PREFIX=models/${GITHUB_SHA}
+          export GIT_SHA=${GITHUB_SHA}
           export DATA_VERSION_PREFIX=datasets/cats-dogs/${GITHUB_SHA}
 
           echo "[DEBUG] Training job: ${JOB_NAME}"
@@ -174,7 +175,7 @@ jobs:
 
   build-and-push-api-image:
     needs: [lint-and-test, run-training-on-gke]
-    if: github.event_name == 'push' && needs.run-training-on-gke.result == 'success'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

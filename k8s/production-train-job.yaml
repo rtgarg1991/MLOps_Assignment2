@@ -60,7 +60,8 @@ spec:
               --learning-rate=${LEARNING_RATE} \
               --model-variant=${MODEL_VARIANT} \
               --num-workers=2 \
-              --mlflow-tracking-uri=http://mlflow-service.default.svc.cluster.local:5000
+              --git-sha=${GIT_SHA} \
+              --mlflow-tracking-uri=http://mlflow-service.${K8S_NAMESPACE}.svc.cluster.local:5000
 
             echo "[TRAIN-JOB] Pipeline complete"
             echo "[TRAIN-JOB] Data lineage for this run:"

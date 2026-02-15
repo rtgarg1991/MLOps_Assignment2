@@ -16,7 +16,7 @@ stages:
       - data/processed
 
   train:
-    cmd: python3 src/train.py --data-dir data/processed --output-model models/model.pt --artifact-dir artifacts/training --image-size ${preprocessing.image_size} --epochs ${training.epochs} --batch-size ${training.batch_size} --learning-rate ${training.learning_rate} --model-variant ${training.model_variant}
+    cmd: python3 src/train.py --data-dir data/processed --output-model models/model.pt --artifact-dir artifacts/training --image-size ${preprocessing.image_size} --epochs ${training.epochs} --batch-size ${training.batch_size} --learning-rate ${training.learning_rate} --model-variant ${training.model_variant} --force-cpu --num-workers 0
     deps:
       - src/train.py
       - src/model.py

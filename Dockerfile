@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+LABEL maintainer="MLOps Team" \
+    description="Cats vs Dogs model trainer"
+
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \

@@ -17,8 +17,9 @@ artifacts/
 mlruns/
 models/
 
-# Data folders (version with DVC/Git-LFS if needed)
+# Data folders (local only — GCS for pipeline)
 data/raw/
+data/ingested/
 data/processed/
 
 # Logs
@@ -41,7 +42,6 @@ dist/
 local_test/
 local_test2/
 local_actual_validation/
-mlruns/
 
 # Packaging outputs
 submission/

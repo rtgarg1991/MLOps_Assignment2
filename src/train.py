@@ -354,6 +354,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-name", type=str, default="")
     parser.add_argument("--disable-mlflow", action="store_true")
     parser.add_argument("--force-cpu", action="store_true")
+    parser.add_argument("--git-sha", type=str, default="")
     return parser.parse_args()
 
 
@@ -396,6 +397,8 @@ def main() -> None:
     criterion = nn.CrossEntropyLoss()
     optimizer = Adam(model.parameters(), lr=args.learning_rate)
 
+    import time as _time
+
     history = {
         "train_loss": [],
         "train_acc": [],
@@ -405,6 +408,7 @@ def main() -> None:
 
     best_val_acc = -1.0
     best_state = None
+    train_start = _time.time()
 
     for epoch in range(1, args.epochs + 1):
         train_loss, train_acc, _, _ = run_one_epoch(
@@ -435,6 +439,8 @@ def main() -> None:
             f"epoch={epoch} train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
             f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
         )
+
+    training_duration_sec = _time.time() - train_start
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -482,6 +488,7 @@ def main() -> None:
         mlflow.set_tracking_uri(args.mlflow_tracking_uri)
         mlflow.set_experiment(args.experiment_name)
         with mlflow.start_run(run_name=args.run_name or None):
+            # -- params --
             mlflow.log_params(
                 {
                     "model_variant": args.model_variant,
@@ -489,15 +496,69 @@ def main() -> None:
                     "batch_size": args.batch_size,
                     "learning_rate": args.learning_rate,
                     "image_size": args.image_size,
+                    "num_workers": args.num_workers,
+                    "seed": args.seed,
                 }
             )
+
+            # -- dataset info --
+            mlflow.log_params(
+                {
+                    "train_samples": len(train_loader.dataset),
+                    "val_samples": len(val_loader.dataset),
+                    "test_samples": len(test_loader.dataset),
+                    "num_classes": len(idx_to_class),
+                    "class_names": ",".join(
+                        idx_to_class[i] for i in sorted(idx_to_class)
+                    ),
+                }
+            )
+
+            # -- per-epoch metrics (for MLflow charts) --
+            for step, (tl, ta, vl, va) in enumerate(
+                zip(
+                    history["train_loss"],
+                    history["train_acc"],
+                    history["val_loss"],
+                    history["val_acc"],
+                )
+            ):
+                mlflow.log_metrics(
+                    {
+                        "train_loss": tl,
+                        "train_acc": ta,
+                        "val_loss": vl,
+                        "val_acc": va,
+                    },
+                    step=step + 1,
+                )
+
+            # -- final metrics --
             mlflow.log_metrics(
                 {
                     "best_val_accuracy": best_val_acc,
                     "test_accuracy": test_acc,
                     "test_loss": test_loss,
+                    "training_duration_sec": round(training_duration_sec, 1),
                 }
             )
+
+            # -- tags --
+            tags = {
+                "run_type": "ci" if args.git_sha else "local",
+                "device": device,
+            }
+            if args.git_sha:
+                tags["git_sha"] = args.git_sha
+            if args.bucket:
+                tags["dataset_source"] = (
+                    f"gs://{args.bucket}/{args.dataset_gcs_prefix}"
+                    if args.dataset_gcs_prefix
+                    else f"gs://{args.bucket}"
+                )
+            mlflow.set_tags(tags)
+
+            # -- artifacts --
             mlflow.log_artifact(str(args.output_model), artifact_path="model")
             mlflow.log_artifact(str(metrics_path), artifact_path="metrics")
             mlflow.log_artifact(str(cm_path), artifact_path="metrics")

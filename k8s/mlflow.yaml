@@ -14,15 +14,22 @@ spec:
       labels:
         app: mlflow
     spec:
+      serviceAccountName: mlops-trainer
       containers:
       - name: mlflow
         image: ghcr.io/mlflow/mlflow:v2.16.2
-        command: ["mlflow", "server"]
+        command: ["/bin/sh", "-c"]
         args:
-          - "--host=0.0.0.0"
-          - "--port=5000"
-          - "--backend-store-uri=sqlite:///mlflow/mlflow.db"
-          - "--default-artifact-root=/mlflow/artifacts"
+          - |
+            pip install google-cloud-storage psutil 2>/dev/null
+            mlflow server \
+              --host=0.0.0.0 \
+              --port=5000 \
+              --backend-store-uri=sqlite:///mlflow/mlflow.db \
+              --default-artifact-root=gs://${BUCKET_NAME}/mlflow-artifacts
+        env:
+        - name: BUCKET_NAME
+          value: "${BUCKET_NAME}"
         ports:
         - containerPort: 5000
         resources:
@@ -39,13 +46,13 @@ spec:
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30
           periodSeconds: 10
         livenessProbe:
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 15
+          initialDelaySeconds: 30
           periodSeconds: 30
       volumes:
       - name: mlflow-data

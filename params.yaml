@@ -6,6 +6,6 @@ preprocessing:
 
 training:
   model_variant: baseline
-  epochs: 5
-  batch_size: 32
+  epochs: 3
+  batch_size: 64
   learning_rate: 0.001

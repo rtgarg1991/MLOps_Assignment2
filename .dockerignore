@@ -1,0 +1,47 @@
+# Ignore everything that shouldn't be in Docker images
+.git/
+.github/
+.venv/
+venv/
+.pytest_cache/
+__pycache__/
+.dvc/
+.DS_Store
+.idea/
+.vscode/
+.flake8
+.gitignore
+.dockerignore
+
+# Data — images stay local/GCS, never in Docker
+data/
+mlruns/
+
+# Docs and meta
+docs/
+*.md
+*.pdf
+LICENSE
+MLOPS_Assignment_2.pdf
+
+# Build artifacts
+artifacts/
+submission/
+*.egg-info/
+build/
+dist/
+
+# DVC files (not needed in container)
+dvc.yaml
+dvc.lock
+params.yaml
+
+# Dev config
+pytest.ini
+Makefile
+scripts/
+
+# Local validation
+local_test/
+local_test2/
+local_actual_validation/
