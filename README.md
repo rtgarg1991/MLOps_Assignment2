@@ -5,59 +5,68 @@ End-to-end MLOps pipeline for binary image classification (cats vs dogs) deploye
 ## End-to-End System Design
 
 ```mermaid
-flowchart TB
-    subgraph DEV["Developer"]
-        CHANGE["Push or PR"]
-    end
-
-    subgraph CI["GitHub Actions"]
+flowchart LR
+    subgraph CI["GitHub Actions (control plane)"]
+        DEV["Developer (push/PR)"]
         LINT["lint-and-test"]
-        BUILD_T["build-trainer-image"]
+        BUILD_T["build trainer image"]
         PUSH_T["push trainer image (push only)"]
-        TRAIN["run training on GKE (push only)"]
+        TRAIN_SUBMIT["submit GKE training job (push only)"]
         BUILD_S["build serving image (push only)"]
         PUSH_S["push serving image (push only)"]
         DEPLOY["deploy API to GKE (push only)"]
         SMOKE["smoke test gate"]
         EVAL["post-deploy eval (optional)"]
+
+        DEV --> LINT --> BUILD_T --> PUSH_T --> TRAIN_SUBMIT --> BUILD_S --> PUSH_S --> DEPLOY --> SMOKE --> EVAL
     end
 
-    subgraph CLOUD["Google Cloud"]
+    subgraph GCP["Google Cloud (data plane)"]
         AR["Artifact Registry"]
 
-        subgraph GCS["Cloud Storage"]
-            RAW["datasets/cats-dogs/raw"]
-            ING["datasets/cats-dogs/{sha}/ingested"]
-            PROC["datasets/cats-dogs/{sha}/processed"]
-            MODEL["models/{sha}/model.pt"]
-            MLFLOW_ART["mlflow-artifacts/"]
+        subgraph GKE["GKE namespace: default"]
+            TRAIN_JOB["Training Job Pod"]
+            MLFLOW["mlflow-service"]
+            API_DEPLOY["cats-dogs-api Deployment (2 replicas)"]
+            API_SVC["cats-dogs-api LoadBalancer Service"]
+            PODMON["PodMonitoring scrape: /metrics"]
         end
 
-        subgraph GKE["GKE Cluster"]
-            MLFLOW["MLflow Deployment + Service"]
-            TRAIN_JOB["Training Job Pod"]
-            API["API Deployment (2 replicas)"]
-            SVC["LoadBalancer Service"]
-            METRICS["/metrics endpoint"]
+        subgraph GCS["Cloud Storage"]
+            GCS_RAW["datasets/cats-dogs/raw"]
+            GCS_ING["datasets/cats-dogs/{sha}/ingested"]
+            GCS_PROC["datasets/cats-dogs/{sha}/processed"]
+            GCS_MODEL["models/{sha}/model.pt"]
+            GCS_MLFLOW["mlflow-artifacts/"]
         end
     end
 
-    CHANGE --> LINT --> BUILD_T
-    BUILD_T --> PUSH_T --> TRAIN --> BUILD_S --> PUSH_S --> DEPLOY --> SMOKE --> EVAL
+    subgraph ACCESS["Accessible endpoints"]
+        API_PUBLIC["API: http://34.136.91.60"]
+        API_METRICS["Metrics: http://34.136.91.60/metrics"]
+        MLFLOW_PUBLIC["MLflow: http://136.116.69.199:5000/"]
+    end
 
     PUSH_T --> AR
     PUSH_S --> AR
+    AR --> TRAIN_JOB
+    AR --> API_DEPLOY
+    TRAIN_SUBMIT --> TRAIN_JOB
+    DEPLOY --> API_DEPLOY
 
-    TRAIN --> TRAIN_JOB
-    TRAIN_JOB --> RAW
-    TRAIN_JOB --> ING
-    TRAIN_JOB --> PROC
-    TRAIN_JOB --> MODEL
+    TRAIN_JOB --> GCS_RAW
+    TRAIN_JOB --> GCS_ING
+    TRAIN_JOB --> GCS_PROC
+    TRAIN_JOB --> GCS_MODEL
     TRAIN_JOB --> MLFLOW
-    MLFLOW --> MLFLOW_ART
+    MLFLOW --> GCS_MLFLOW
 
-    DEPLOY --> API --> SVC --> SMOKE
-    API --> METRICS
+    API_DEPLOY --> API_SVC
+    API_DEPLOY --> PODMON
+    API_SVC --> API_PUBLIC
+    API_SVC --> API_METRICS
+    MLFLOW --> MLFLOW_PUBLIC
+    SMOKE --> API_PUBLIC
 ```
 
 ## Project Structure
@@ -149,6 +158,21 @@ curl http://127.0.0.1:8080/health
 curl -X POST http://127.0.0.1:8080/predict -F "file=@path/to/image.jpg"
 ```
 
+## Service Endpoints
+
+### API service
+
+- External base URL: `http://34.136.91.60`
+- Health: `GET /health`
+- Prediction: `POST /predict`
+- Metrics: `GET /metrics` (full URL: `http://34.136.91.60/metrics`)
+
+### MLflow service
+
+- External UI: `http://136.116.69.199:5000/`
+- In-cluster endpoint used by trainer:
+  - `http://mlflow-service.default.svc.cluster.local:5000`
+
 ## Experiment Tracking (MLflow)
 
 MLflow is deployed within the GKE cluster and used for experiment tracking during training.
@@ -171,11 +195,8 @@ MLflow is deployed within the GKE cluster and used for experiment tracking durin
 ### Access MLflow UI
 
 ```bash
-# Get MLflow external IP
-kubectl get svc mlflow-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-
-# Open in browser
-open http://<MLFLOW_IP>:5000
+# Open MLflow UI
+open http://136.116.69.199:5000/
 ```
 
 ## Data Versioning
@@ -261,9 +282,37 @@ flake8 src tests scripts        # Linting
 ## Monitoring
 
 - **API Logging**: Request/response middleware in FastAPI
-- **Prometheus Metrics**: Counters and histograms exposed at `/metrics`
+- **Prometheus Metrics**: Counters, gauges, and histograms exposed at `/metrics`
 - **GKE PodMonitoring**: `k8s/monitoring/google-pod-monitor.yaml` for metric scraping
 - **Health Probes**: Liveness and readiness probes on both API and MLflow pods
+
+### GCP Metrics Dashboard
+
+Use Cloud Monitoring dashboards to visualize API behavior from scraped Prometheus metrics.
+
+1. Open [Cloud Monitoring Dashboards](https://console.cloud.google.com/monitoring/dashboards?project=<PROJECT_ID>).
+2. Create dashboard: `cats-dogs-mlops`.
+3. Add PromQL widgets (examples):
+
+```promql
+sum(rate(cats_dogs_requests_total[5m]))
+```
+
+```promql
+histogram_quantile(0.95, sum(rate(cats_dogs_request_latency_seconds_bucket[5m])) by (le))
+```
+
+```promql
+histogram_quantile(0.95, sum(rate(cats_dogs_inference_latency_seconds_bucket[5m])) by (le))
+```
+
+```promql
+sum(cats_dogs_in_flight_requests)
+```
+
+```promql
+sum(rate(cats_dogs_prediction_errors_total[5m])) by (error_type)
+```
 
 ## Post-Deployment Evaluation
 
@@ -275,7 +324,7 @@ PYTHONPATH=. python scripts/create_eval_batch.py \
 
 # Evaluate deployed API
 PYTHONPATH=. python src/post_deploy_eval.py \
-  --base-url http://<API_IP> --input-csv artifacts/eval_batch.csv \
+  --base-url http://34.136.91.60 --input-csv artifacts/eval_batch.csv \
   --output-json artifacts/post_deploy_eval.json
 ```
 
