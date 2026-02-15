@@ -160,7 +160,7 @@ jobs:
             # Refresh GKE credentials every 10 minutes to prevent token expiry
             if [ $(( SECONDS - LAST_REFRESH )) -ge $REFRESH_INTERVAL ]; then
               echo "[DEBUG] Refreshing GKE credentials..."
-              gcloud container clusters get-credentials ${GKE_CLUSTER} --zone ${GKE_ZONE} --project ${PROJECT_ID}
+              gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${CLUSTER_LOCATION} --project ${PROJECT_ID}
               LAST_REFRESH=$SECONDS
             fi
             ELAPSED_MIN=$(( SECONDS / 60 ))
