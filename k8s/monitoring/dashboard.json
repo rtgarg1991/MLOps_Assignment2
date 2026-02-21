@@ -1,0 +1,435 @@
+{
+    "displayName": "Cats vs Dogs API Dashboard",
+    "mosaicLayout": {
+        "columns": 12,
+        "tiles": [
+            {
+                "width": 12,
+                "height": 2,
+                "widget": {
+                    "title": "",
+                    "text": {
+                        "content": "# 🐱🐶 Cats vs Dogs API — Monitoring Dashboard\nReal-time metrics from GKE-deployed inference API",
+                        "format": "MARKDOWN"
+                    }
+                }
+            },
+            {
+                "yPos": 2,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Request Rate (per second)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "rate(cats_dogs_requests_total{cluster=\"mlops-cluster\"}[5m])"
+                                },
+                                "plotType": "LINE"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "req/s",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 4,
+                "yPos": 2,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Request Latency P50 / P95 / P99",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.50, rate(cats_dogs_request_latency_seconds_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p50"
+                            },
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.95, rate(cats_dogs_request_latency_seconds_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p95"
+                            },
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.99, rate(cats_dogs_request_latency_seconds_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p99"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "seconds",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 8,
+                "yPos": 2,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Error Rate (4xx + 5xx)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "sum(rate(cats_dogs_requests_total{cluster=\"mlops-cluster\", status=~\"4..|5..\"}[5m])) or vector(0)"
+                                },
+                                "plotType": "LINE"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "errors/s",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "yPos": 6,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Predictions by Label",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "sum by (label) (rate(cats_dogs_predictions_total{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "STACKED_AREA"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "predictions/s",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 4,
+                "yPos": 6,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Prediction Confidence (P50 / P95)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.50, rate(cats_dogs_prediction_confidence_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p50 confidence"
+                            },
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.95, rate(cats_dogs_prediction_confidence_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p95 confidence"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "confidence",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 8,
+                "yPos": 6,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Inference Latency (model only)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.50, rate(cats_dogs_inference_latency_seconds_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p50"
+                            },
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.99, rate(cats_dogs_inference_latency_seconds_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p99"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "seconds",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "yPos": 10,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Prediction Errors by Type",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "sum by (error_type) (rate(cats_dogs_prediction_errors_total{cluster=\"mlops-cluster\"}[5m])) or vector(0)"
+                                },
+                                "plotType": "STACKED_BAR"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "errors/s",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 4,
+                "yPos": 10,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Image Upload Size (bytes)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.50, rate(cats_dogs_image_upload_bytes_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p50 size"
+                            },
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "histogram_quantile(0.95, rate(cats_dogs_image_upload_bytes_bucket{cluster=\"mlops-cluster\"}[5m]))"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "p95 size"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "bytes",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 8,
+                "yPos": 10,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "In-Flight Requests",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "cats_dogs_in_flight_requests{cluster=\"mlops-cluster\"}"
+                                },
+                                "plotType": "LINE"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "concurrent",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "yPos": 14,
+                "width": 12,
+                "height": 2,
+                "widget": {
+                    "title": "",
+                    "text": {
+                        "content": "## 🖥️ Process & Resource Metrics",
+                        "format": "MARKDOWN"
+                    }
+                }
+            },
+            {
+                "yPos": 16,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "CPU Usage (seconds/s)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "rate(process_cpu_seconds_total{cluster=\"mlops-cluster\", job=\"cats-dogs-api-monitor\"}[5m])"
+                                },
+                                "plotType": "LINE"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "CPU cores",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 4,
+                "yPos": 16,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Memory Usage (RSS)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "process_resident_memory_bytes{cluster=\"mlops-cluster\", job=\"cats-dogs-api-monitor\"} / 1024 / 1024"
+                                },
+                                "plotType": "LINE"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "MB",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 8,
+                "yPos": 16,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Open File Descriptors",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "process_open_fds{cluster=\"mlops-cluster\", job=\"cats-dogs-api-monitor\"}"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "open"
+                            },
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "process_max_fds{cluster=\"mlops-cluster\", job=\"cats-dogs-api-monitor\"}"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "max"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "fds",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "yPos": 20,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "HTTP Request Size (bytes)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "rate(http_request_size_bytes_sum{cluster=\"mlops-cluster\"}[5m]) / rate(http_request_size_bytes_count{cluster=\"mlops-cluster\"}[5m])"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "avg request size"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "bytes",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 4,
+                "yPos": 20,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "HTTP Response Size (bytes)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "rate(http_response_size_bytes_sum{cluster=\"mlops-cluster\"}[5m]) / rate(http_response_size_bytes_count{cluster=\"mlops-cluster\"}[5m])"
+                                },
+                                "plotType": "LINE",
+                                "legendTemplate": "avg response size"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "bytes",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            },
+            {
+                "xPos": 8,
+                "yPos": 20,
+                "width": 4,
+                "height": 4,
+                "widget": {
+                    "title": "Total Requests (cumulative)",
+                    "xyChart": {
+                        "dataSets": [
+                            {
+                                "timeSeriesQuery": {
+                                    "prometheusQuery": "sum by (path) (cats_dogs_requests_total{cluster=\"mlops-cluster\"})"
+                                },
+                                "plotType": "STACKED_AREA"
+                            }
+                        ],
+                        "timeshiftDuration": "0s",
+                        "yAxis": {
+                            "label": "total",
+                            "scale": "LINEAR"
+                        }
+                    }
+                }
+            }
+        ]
+    }
+}
