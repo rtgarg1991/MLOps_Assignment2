@@ -57,7 +57,7 @@ spec:
             "
             echo "[TRAIN-JOB] EDA artifact at gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/eda/class_balance.png"
 
-            echo "[TRAIN-JOB] Step 4/5: Training model..."
+            echo "[TRAIN-JOB] Step 5/5: Training model..."
             python src/train.py \
               --data-dir=/tmp/processed \
               --output-model=/tmp/model.pt \
