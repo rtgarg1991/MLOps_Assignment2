@@ -23,7 +23,7 @@ env:
   K8S_SERVICE_ACCOUNT: mlops-trainer
   APP_NAME: cats-dogs-api
   DATASET_GCS_PREFIX: datasets/cats-dogs/raw
-  EPOCHS: "1"
+  EPOCHS: "2"
   BATCH_SIZE: "64"
   LEARNING_RATE: "0.001"
   MODEL_VARIANT: baseline
