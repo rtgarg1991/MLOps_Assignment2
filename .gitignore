@@ -15,7 +15,6 @@ venv/
 # ML artifacts and runtime outputs
 artifacts/
 mlruns/
-models/
 
 # Data folders (local only — GCS for pipeline)
 data/raw/
