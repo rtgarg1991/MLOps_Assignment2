@@ -19,7 +19,7 @@ spec:
             set -e
             export GIT_PYTHON_REFRESH=quiet
 
-            echo "[TRAIN-JOB] Step 1/4: Downloading raw data from GCS..."
+            echo "[TRAIN-JOB] Step 1/5: Downloading raw data from GCS..."
             python -c "
             from src.train import download_prefix_from_gcs
             from pathlib import Path
@@ -28,7 +28,7 @@ spec:
             echo "[TRAIN-JOB] Raw data downloaded:"
             ls -la /tmp/raw/
 
-            echo "[TRAIN-JOB] Step 2/4: Running ingest (normalize folder names)..."
+            echo "[TRAIN-JOB] Step 2/5: Running ingest (normalize folder names)..."
             python src/ingest.py --source-dir /tmp/raw --output-dir /tmp/ingested
             echo "[TRAIN-JOB] Uploading ingested data to GCS (versioned)..."
             python -c "
@@ -38,7 +38,7 @@ spec:
             "
             echo "[TRAIN-JOB] Ingested data versioned at gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/ingested/"
 
-            echo "[TRAIN-JOB] Step 3/4: Running preprocessing (resize + split)..."
+            echo "[TRAIN-JOB] Step 3/5: Running preprocessing (resize + split)..."
             python src/preprocessing.py --input-dir /tmp/ingested --output-dir /tmp/processed
             echo "[TRAIN-JOB] Uploading processed data to GCS (versioned)..."
             python -c "
@@ -48,7 +48,16 @@ spec:
             "
             echo "[TRAIN-JOB] Processed data versioned at gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/processed/"
 
-            echo "[TRAIN-JOB] Step 4/4: Training model..."
+            echo "[TRAIN-JOB] Step 4/5: Running EDA..."
+            python src/eda.py --data-dir /tmp/processed --output /tmp/artifacts/eda/class_balance.png
+            python -c "
+            from src.train import upload_file_to_gcs
+            from pathlib import Path
+            upload_file_to_gcs('${BUCKET_NAME}', Path('/tmp/artifacts/eda/class_balance.png'), '${DATA_VERSION_PREFIX}/eda/class_balance.png')
+            "
+            echo "[TRAIN-JOB] EDA artifact at gs://${BUCKET_NAME}/${DATA_VERSION_PREFIX}/eda/class_balance.png"
+
+            echo "[TRAIN-JOB] Step 4/5: Training model..."
             python src/train.py \
               --data-dir=/tmp/processed \
               --output-model=/tmp/model.pt \
