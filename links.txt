@@ -1,0 +1,19 @@
+Team:
+Group: 108
+Akash Verma - 2024AA05466
+Rohit Garg - 2024AA05835
+PRAVEEN CHANDRAKUMAR MEENAKSHI MULCHANDA - 2024AB05115
+BHARADWA NAYANKUMAR PRAFULLABHAI - 2024AA05492
+KUMAR VINEETH - 2024AA05620
+
+Repository: https://github.com/rtgarg1991/MLOps_Assignment2/tree/main
+
+Video: https://github.com/rtgarg1991/MLOps_Assignment2/blob/main/video.mp4
+
+Screenshots: https://github.com/rtgarg1991/MLOps_Assignment2/tree/main/screenshots
+Architecture & Documentation: https://github.com/rtgarg1991/MLOps_Assignment2/blob/main/MLOPS%20-%20Architecture%20document.pdf
+
+MLFlow: http://136.116.69.199:5000/#/experiments/1
+Service Health Endpoint: http://34.136.91.60/health
+Predict Endpoint [POST]: http://34.136.91.60/predict
+Predict Curl: curl -X POST http://34.136.91.60/predict -F "file=@{Full_Path_To_Image}"

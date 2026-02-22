@@ -74,26 +74,58 @@ flowchart LR
 ```
 .
 ├── src/
-│   ├── ingest.py              # Normalize raw Cat/Dog folders
-│   ├── preprocessing.py       # Resize + train/val/test split
-│   ├── train.py               # Training with parallel GCS, MLflow logging
-│   ├── model.py               # CNN architectures (baseline, wider)
-│   ├── main.py                # FastAPI service (/health, /predict, /metrics)
-│   ├── smoke_test.py          # Post-deploy API validation
-│   └── post_deploy_eval.py    # Evaluation with labeled test data
+│   ├── __init__.py              # Package init
+│   ├── config.py                # Shared config (image size, model path, constants)
+│   ├── ingest.py                # Normalize raw Cat/Dog folders
+│   ├── preprocessing.py         # Resize + train/val/test split
+│   ├── eda.py                   # Exploratory data analysis (class balance chart)
+│   ├── feature_engineering.py   # Feature transforms and augmentation
+│   ├── train.py                 # Training with parallel GCS upload, MLflow logging
+│   ├── model.py                 # CNN architectures (baseline, wider)
+│   ├── inference.py             # Model loading and inference utilities
+│   ├── main.py                  # FastAPI service (/health, /predict, /metrics)
+│   ├── smoke_test.py            # Post-deploy API validation with retries
+│   ├── post_deploy_eval.py      # Batch evaluation with labeled test data
+│   └── promote.py               # Model promotion utilities
+├── tests/
+│   ├── conftest.py              # Shared test fixtures
+│   ├── test_api.py              # FastAPI endpoint tests
+│   ├── test_train.py            # Training function tests
+│   ├── test_ingest.py           # Ingestion tests
+│   ├── test_preprocessing.py    # Preprocessing tests
+│   ├── test_inference_utils.py  # Inference utility tests
+│   └── test_feature_engineering.py  # Feature engineering tests
 ├── k8s/
-│   ├── deployment.yaml        # API deployment + LoadBalancer
-│   ├── production-train-job.yaml  # Full pipeline training job
-│   ├── mlflow.yaml            # MLflow server deployment
-│   └── monitoring/            # Prometheus PodMonitoring
+│   ├── deployment.yaml          # API deployment + LoadBalancer service
+│   ├── production-train-job.yaml    # Full 5-step training K8s Job
+│   ├── parallel-train-job.yaml  # Parallel experiment training job
+│   ├── universal-job.yaml       # Generic job template
+│   ├── mlflow.yaml              # MLflow server deployment + service
+│   └── monitoring/
+│       ├── google-pod-monitor.yaml  # Prometheus PodMonitoring resource
+│       └── dashboard.json       # GCP Cloud Monitoring dashboard definition
+├── scripts/
+│   ├── create_submission_bundle.sh  # Package assignment submission
+│   ├── create_eval_batch.py     # Generate evaluation CSV
+│   └── postman_collection.json  # Postman collection for API testing
+├── screenshots/                 # Pipeline, MLflow, dashboard screenshots
+├── data/                        # Local dataset (git-ignored, GCS in prod)
+│   └── raw/                     # Raw Cat/ and Dog/ image folders
+├── models/                      # Trained model output (git-ignored)
+├── artifacts/                   # Training artifacts (git-ignored)
+├── docs/                        # Assignment docs and video script
 ├── .github/workflows/
-│   └── mlops-pipeline.yml     # CI/CD pipeline
-├── tests/                     # Unit and API test suite
-├── dvc.yaml                   # DVC pipeline stages
-├── params.yaml                # Hyperparameter config
-├── Dockerfile                 # Trainer image
-├── Dockerfile.serve           # Serving image (with model baked in)
-└── docs/                      # Assignment requirement docs
+│   └── mlops-pipeline.yml       # CI/CD pipeline (lint → build → train → deploy)
+├── Dockerfile                   # Trainer image
+├── Dockerfile.serve             # Serving image (with model baked in)
+├── .dockerignore                # Excludes .git, .venv, data from Docker builds
+├── dvc.yaml                     # DVC pipeline (ingest → preprocess → eda → train)
+├── params.yaml                  # Hyperparameter config for DVC
+├── requirements.txt             # Python dependencies (core + dev)
+├── Makefile                     # Common dev commands
+├── pytest.ini                   # Pytest configuration
+├── .flake8                      # Linter configuration
+└── README.md                    # This file
 ```
 
 ## Prerequisites
@@ -327,15 +359,3 @@ PYTHONPATH=. python src/post_deploy_eval.py \
   --base-url http://34.136.91.60 --input-csv artifacts/eval_batch.csv \
   --output-json artifacts/post_deploy_eval.json
 ```
-
-## Submission Packaging
-
-```bash
-./scripts/create_submission_bundle.sh
-```
-
-Output zip is created under `submission/`.
-
-## Assignment Requirement Coverage
-
-See [docs/ASSIGNMENT2_REQUIREMENTS_COVERAGE.md](docs/ASSIGNMENT2_REQUIREMENTS_COVERAGE.md) for the full M1–M5 requirement-to-implementation matrix.
