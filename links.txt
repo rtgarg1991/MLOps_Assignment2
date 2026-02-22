@@ -8,7 +8,7 @@ KUMAR VINEETH - 2024AA05620
 
 Repository: https://github.com/rtgarg1991/MLOps_Assignment2/tree/main
 
-Video: https://github.com/rtgarg1991/MLOps_Assignment2/blob/main/video.mp4
+Video: https://drive.google.com/file/d/1CJSjzw8ZXxLRB95cSdKBio9FbrZ7QQBG/view?usp=drive_link
 
 Screenshots: https://github.com/rtgarg1991/MLOps_Assignment2/tree/main/screenshots
 Architecture & Documentation: https://github.com/rtgarg1991/MLOps_Assignment2/blob/main/MLOPS%20-%20Architecture%20document.pdf
